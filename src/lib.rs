@@ -59,14 +59,6 @@ async fn main() {
 
                 loop {
                     settings.update();
-                    if let Some(world_obj) = module.get_g_world_uobject(&process) {
-                        let name = world_obj.get_fname::<25>(&process, &module);
-                        if let Ok(n) = name {
-                            if let Ok(s) = String::from_utf8(n.as_bytes().to_vec()) {
-                                set_variable("gworld name", &s);
-                            }
-                        }
-                    }
                     
                     if let Ok(player_location) = player.deref_offsets(&process, &module)
                         .and_then(|addr| process.read::<u64>(addr)) {
