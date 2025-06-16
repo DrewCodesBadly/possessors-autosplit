@@ -115,11 +115,7 @@ async fn main() {
                             "Pawn",
                             "leglessLuca",
                         ]);
-                        if legless_luca.deref::<u8>(&process, &module).ok().filter(|no_legs| *no_legs == 1).is_some() {
-                            luca_has_legs = false;
-                        } else {
-                            luca_has_legs = true;
-                        }
+                        luca_has_legs = legless_luca.deref::<u8>(&process, &module).ok().filter(|no_legs| *no_legs == 1).is_none();
                         
                         let load_status: UnrealPointer<4> = UnrealPointer::new(Address::new(player_location), &[
                             "PlayerController",
