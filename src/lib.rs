@@ -6,6 +6,7 @@ static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 
 #[cfg(debug_assertions)]
 use alloc::format;
+use alloc::string::String;
 use asr::{future::next_tick, game_engine::unreal::{Module, UnrealPointer, Version}, print_message, settings::Gui, timer::{pause_game_time, resume_game_time, set_variable, split, start}, Address, Process};
 
 asr::async_main!(stable);
@@ -25,6 +26,10 @@ struct Settings {
     /// Split when collecting an ability
     #[default = true]
     abilities: bool,
+
+    /// Split when collecting any item
+    #[default = true]
+    items: bool,
 }
 
 // TODO: Optimize all of this instead of using the unreal functions.
@@ -50,7 +55,15 @@ async fn main() {
                 let player: UnrealPointer<5> = UnrealPointer::new(world, &["OwningGameInstance", "LocalPlayers"]);
                 let mut last_demo_end = 0;
                 let mut last_ability = 0;
+                let mut last_item = 0;
                 let mut luca_has_legs = true;
+                // Used to determine when to start the timer.
+                // The timer will start when
+                // 1. We Have left the title screen (sets this bool to true)
+                // 2. Game is finished loading (loading state was 3 and is now not.)
+                // 3. Luca does not have legs.
+                let mut check_next_load = false;
+                let mut game_load_in_progress = false;
 
                 #[cfg(debug_assertions)]
                 print_message(&format!("World address: {:?}", world));
@@ -59,11 +72,22 @@ async fn main() {
                 loop {
                     settings.update();
                     
+                    // Are we in the game world, or the menu world, or loading the game world?
+                    // For now, this only specifies if we're in the game world or not
+                    if !module.get_g_world_uobject(&process)
+                        .and_then(|world| world.get_fname::<6>(&process, &module).ok())
+                        .filter(|name| name.as_bytes() == "Pose_P".as_bytes())
+                        .is_some() {
+                        check_next_load = true;
+                    }
+                    #[cfg(debug_assertions)]
+                    set_variable("in_game_world", &format!("{}", check_next_load));
+
                     if let Ok(player_location) = player.deref_offsets(&process, &module)
                         .and_then(|addr| process.read::<u64>(addr)) {
                         // INVALID, DEAD, ALIVE, RESPAWNING. Kinda pointless?
                         // If you want something to happen when you die maybe?
-                        // let player_state: UnrealPointer<5> = UnrealPointer::new(Address::new(*array_start), &[
+                        // let player_state: UnrealPointer<3> = UnrealPointer::new(Address::new(player_location), &[
                         //     "PlayerController",
                         //     "Pawn",
                         //     "CoreState",
@@ -72,7 +96,7 @@ async fn main() {
 
                         // I'm just gonna use the ability unlock screen since I haven't tested
                         // this.
-                        // let player_abilities: UnrealPointer<5> = UnrealPointer::new(Address::new(*player_location), &[
+                        // let player_abilities: UnrealPointer<3> = UnrealPointer::new(Address::new(*player_location), &[
                         //     "PlayerController",
                         //     "Pawn",
                         //     "DefaultUnlockedAbilities",
@@ -92,12 +116,7 @@ async fn main() {
                             "leglessLuca",
                         ]);
                         if legless_luca.deref::<u8>(&process, &module).ok().filter(|no_legs| *no_legs == 1).is_some() {
-                            if settings.start && luca_has_legs {
-                                luca_has_legs = false;
-                                start();
-                            } else {
-                                luca_has_legs = true;
-                            }
+                            luca_has_legs = false;
                         } else {
                             luca_has_legs = true;
                         }
@@ -108,14 +127,29 @@ async fn main() {
                             "LoadingScreen",
                             "CurrentStatus",
                         ]);
+
+                        #[cfg(debug_assertions)]
+                        set_variable("load_status", &format!("{:?}", load_status.deref::<u8>(&process, &module)));
+
                         // Is loading when this == 3
+                        // This also contains the logic for starting the timer.
                         if load_status.deref::<u8>(&process, &module).ok().filter(|s| *s == 3).is_some() {
                             pause_game_time();
+                            if check_next_load {
+                                game_load_in_progress = true;
+                                check_next_load = false;
+                            }
                         } else {
                             resume_game_time();
+                            if game_load_in_progress {
+                                game_load_in_progress = false;
+                                if !luca_has_legs {
+                                    start();
+                                }
+                            }
                         }
 
-                        // These two work the same way.
+                        // These three work the same way.
                         // They are either broken (The pointer to the screen is null) before
                         // the screen has triggered once and loaded,
                         // or they are a boolean 1 or 0, 1 when they're shown.
@@ -152,6 +186,23 @@ async fn main() {
                             }
                         } else {
                             last_ability = 0;
+                        }
+
+                        let item_pickup: UnrealPointer<4> = UnrealPointer::new(Address::new(player_location), &[
+                            "PlayerController",
+                            "MyHUD",
+                            "ItemPickupScreen",
+                            "bIsActive",
+                        ]);
+                        if let Ok(b) = item_pickup.deref::<u8>(&process, &module) {
+                            if settings.items && b == 1 && last_item == 0 {
+                                last_item = 1;
+                                split();
+                            } else {
+                                last_item = b;
+                            }
+                        } else {
+                            last_item = 0;
                         }
                     } else {
                         luca_has_legs = true;
