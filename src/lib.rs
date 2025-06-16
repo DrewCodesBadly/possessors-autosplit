@@ -6,7 +6,6 @@ static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 
 #[cfg(debug_assertions)]
 use alloc::format;
-use alloc::string::String;
 use asr::{future::next_tick, game_engine::unreal::{Module, UnrealPointer, Version}, print_message, settings::Gui, timer::{pause_game_time, resume_game_time, set_variable, split, start}, Address, Process};
 
 asr::async_main!(stable);
