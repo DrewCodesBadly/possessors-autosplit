@@ -3,16 +3,16 @@
 An auto splitter for Possessor(s) (The demo)
 
 Some details are in the comments in lib.rs.
-The current autosplitter is **very unoptimized** and uses features from the asr crate
+The current autosplitter is uses features from the asr crate
 specific to unreal instead of just getting the pointer paths because i'm lazy, but going through the
-CXX headers for the offsets and swapping everything out should be all that needs to be done.
+CXX headers for the offsets and swapping everything out might improve performance.
 
 The autosplitter tracks data related to the HUD - loads are removed whenever WBP_LoadingScreen_C.CurrentStatus == 3.
 Similarly, it tracks if the ability screen and demo end screen exist and are being shown.
 Finally, it tracks the variable leglessLuca in the player pawn to track when a new game starts.
 
 Dumping the CXX headers and inspecting classes can be done using UE4SS just fine,
-using the experimental release with 5.5 support. However, a different AOB was needed to 
+using the experimental release with 5.5 support. However, a different AOB was needed to
 find GUObjectArray - the settings and AOBs used are in this repository.
 
 Below is taken from the auto splitter template.
