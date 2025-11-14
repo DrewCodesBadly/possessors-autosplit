@@ -24,9 +24,9 @@ struct Settings {
     #[default = true]
     start: bool,
 
-    /// Split on demo end
+    /// Split on ending
     #[default = true]
-    demo_end: bool,
+    end: bool,
 
     /// Split when collecting an ability
     #[default = true]
@@ -61,17 +61,15 @@ async fn main() {
                 let world = module.g_world();
                 let player: UnrealPointer<5> =
                     UnrealPointer::new(world, &["OwningGameInstance", "LocalPlayers"]);
-                let mut last_demo_end = 0;
                 let mut last_ability = 0;
                 let mut last_item = 0;
-                let mut luca_has_legs = true;
+                let mut in_intro_cutscene = false;
+                let mut credits_running = false;
                 // Used to determine when to start the timer.
                 // The timer will start when
                 // 1. We Have left the title screen (sets this bool to true)
                 // 2. Game is finished loading (loading state was 3 and is now not.)
                 // 3. Luca does not have legs.
-                let mut check_next_load = false;
-                let mut game_load_in_progress = false;
 
                 #[cfg(debug_assertions)]
                 print_message(&format!("World address: {:?}", world));
@@ -79,18 +77,19 @@ async fn main() {
                 loop {
                     settings.update();
 
-                    // Are we in the game world, or the menu world, or loading the game world?
-                    // For now, this only specifies if we're in the game world or not
-                    if !module
-                        .get_g_world_uobject(&process)
-                        .and_then(|world| world.get_fname::<6>(&process, &module).ok())
-                        .filter(|name| name.as_bytes() == "Pose_P".as_bytes())
-                        .is_some()
-                    {
-                        check_next_load = true;
-                    }
-                    #[cfg(debug_assertions)]
-                    set_variable("in_game_world", &format!("{}", check_next_load));
+                    // True when on the title screen.
+                    // if module
+                    //     .get_g_world_uobject(&process)
+                    //     .and_then(|world| world.get_fname::<6>(&process, &module).ok())
+                    //     .filter(|name| name.as_bytes() == "Pose_P".as_bytes())
+                    //     .is_none()
+                    // {
+                    //     #[cfg(debug_assertions)]
+                    //     set_variable("in_game_world", "true");
+                    // } else {
+                    //     #[cfg(debug_assertions)]
+                    //     set_variable("in_game_world", "false");
+                    // }
 
                     if let Ok(player_location) = player
                         .deref_offsets(&process, &module)
@@ -114,27 +113,14 @@ async fn main() {
                         // ]);
                         //
 
-                        // ABP_PosePlayerPawn_C has some real fun stuff in there. HUUUUGE
-                        // class. of all things here i'm gonna try to use legless luca (lmao)
-                        // as a start autosplit.
-                        // leglessLuca is a bool in that class which, as you may guess,
-                        // represents whether or not luca has her legs. It's pretty safe to say
-                        // if the last read was nonexistent or false we are starting a new
-                        // game.
-                        let legless_luca: UnrealPointer<4> = UnrealPointer::new(
-                            Address::new(player_location),
-                            &["PlayerController", "Pawn", "LeglessLuca"],
-                        );
-                        // Not sure what this does yet oopsie spoilers
-                        // let hornless_luca: UnrealPointer<4> = UnrealPointer::new(
+                        // let legless_luca: UnrealPointer<4> = UnrealPointer::new(
+                        //     Address::new(player_location),
+                        //     &["PlayerController", "Pawn", "LeglessLuca"],
+                        // );
+                        // let hornless_ptr: UnrealPointer<4> = UnrealPointer::new(
                         //     Address::new(player_location),
                         //     &["PlayerController", "Pawn", "HornlessLuca"],
                         // );
-                        luca_has_legs = legless_luca
-                            .deref::<u8>(&process, &module)
-                            .ok()
-                            .filter(|no_legs| *no_legs == 1)
-                            .is_none();
 
                         let load_status: UnrealPointer<4> = UnrealPointer::new(
                             Address::new(player_location),
@@ -146,11 +132,23 @@ async fn main() {
                             ],
                         );
 
-                        // This might be useful later, idk
-                        // let player_stats: UnrealPointer<4> = UnrealPointer::new(
-                        //     Address::new(player_location),
-                        //     &["PlayerController", "Pawn", "PlayerStats"],
-                        // );
+                        // Useful for testing, I guess.
+                        #[cfg(debug_assertions)]
+                        {
+                            let player_stats: UnrealPointer<4> = UnrealPointer::new(
+                                Address::new(player_location),
+                                &["PlayerController", "Pawn", "PlayerStats"],
+                            );
+                            if let Ok(addr) = player_stats.deref_offsets(&process, &module) {
+                                set_variable(
+                                    "sprint_mult",
+                                    &format!(
+                                        "{}",
+                                        &process.read::<f32>(addr + 0x18).unwrap_or(-1.0),
+                                    ),
+                                );
+                            }
+                        }
 
                         #[cfg(debug_assertions)]
                         set_variable(
@@ -167,40 +165,66 @@ async fn main() {
                             .is_some()
                         {
                             pause_game_time();
-                            if check_next_load {
-                                game_load_in_progress = true;
-                                check_next_load = false;
-                            }
                         } else {
                             resume_game_time();
-                            if game_load_in_progress {
-                                game_load_in_progress = false;
-                                if !luca_has_legs {
-                                    start();
-                                }
+                        }
+
+                        // Start autosplit: Checks for the intro cutscene object disappearing
+                        let intro_cutscene_active_ptr: UnrealPointer<4> = UnrealPointer::new(
+                            Address::new(player_location),
+                            &["PlayerController", "MyHUD", "IntroMovieScreen", "bIsActive"],
+                        );
+                        if intro_cutscene_active_ptr
+                            .deref::<u8>(&process, &module)
+                            .ok()
+                            .filter(|v| *v == 1)
+                            .is_some()
+                        {
+                            in_intro_cutscene = true;
+                        } else if in_intro_cutscene {
+                            in_intro_cutscene = false;
+                            if settings.start {
+                                start();
                             }
                         }
+                        #[cfg(debug_assertions)]
+                        set_variable(
+                            "intro",
+                            &format!(
+                                "{:?}",
+                                intro_cutscene_active_ptr.deref::<u8>(&process, &module)
+                            ),
+                        );
+
+                        // End autosplit: Checks for the credits screen
+                        let credits_cutscene_ptr: UnrealPointer<4> = UnrealPointer::new(
+                            Address::new(player_location),
+                            &["PlayerController", "MyHUD", "EndCreditsScreen", "bIsActive"],
+                        );
+                        if settings.end
+                            && credits_cutscene_ptr
+                                .deref::<u8>(&process, &module)
+                                .ok()
+                                .filter(|v| *v == 1)
+                                .is_some()
+                        {
+                            if !credits_running {
+                                split();
+                            }
+                            credits_running = true;
+                        } else {
+                            credits_running = false;
+                        }
+                        #[cfg(debug_assertions)]
+                        set_variable(
+                            "credits",
+                            &format!("{:?}", credits_cutscene_ptr.deref::<u8>(&process, &module)),
+                        );
 
                         // These three work the same way.
                         // They are either broken (The pointer to the screen is null) before
                         // the screen has triggered once and loaded,
                         // or they are a boolean 1 or 0, 1 when they're shown.
-                        let demo_end: UnrealPointer<4> = UnrealPointer::new(
-                            Address::new(player_location),
-                            &["PlayerController", "MyHUD", "DemoEndScreen", "bIsActive"],
-                        );
-                        // This logic is kinda jank but it should be fine
-                        if let Ok(b) = demo_end.deref::<u8>(&process, &module) {
-                            if settings.demo_end && b == 1 && last_demo_end == 0 {
-                                last_demo_end = 1;
-                                split();
-                            } else {
-                                last_demo_end = b;
-                            }
-                        } else {
-                            last_demo_end = 0;
-                        }
-
                         let ability_unlock: UnrealPointer<4> = UnrealPointer::new(
                             Address::new(player_location),
                             &[
@@ -236,11 +260,7 @@ async fn main() {
                             last_item = 0;
                         }
                     } else {
-                        luca_has_legs = true;
                     }
-
-                    #[cfg(debug_assertions)]
-                    set_variable("luca_has_legs", &format!("{}", luca_has_legs));
 
                     next_tick().await;
                 }
