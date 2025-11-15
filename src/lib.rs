@@ -132,30 +132,6 @@ async fn main() {
                             ],
                         );
 
-                        // Useful for testing, I guess.
-                        #[cfg(debug_assertions)]
-                        {
-                            let player_stats: UnrealPointer<4> = UnrealPointer::new(
-                                Address::new(player_location),
-                                &["PlayerController", "Pawn", "PlayerStats"],
-                            );
-                            if let Ok(addr) = player_stats.deref_offsets(&process, &module) {
-                                set_variable(
-                                    "sprint_mult",
-                                    &format!(
-                                        "{}",
-                                        &process.read::<f32>(addr + 0x18).unwrap_or(-1.0),
-                                    ),
-                                );
-                            }
-                        }
-
-                        #[cfg(debug_assertions)]
-                        set_variable(
-                            "load_status",
-                            &format!("{:?}", load_status.deref::<u8>(&process, &module)),
-                        );
-
                         // Is loading when this == 3
                         // This also contains the logic for starting the timer.
                         if load_status
@@ -187,14 +163,6 @@ async fn main() {
                                 start();
                             }
                         }
-                        #[cfg(debug_assertions)]
-                        set_variable(
-                            "intro",
-                            &format!(
-                                "{:?}",
-                                intro_cutscene_active_ptr.deref::<u8>(&process, &module)
-                            ),
-                        );
 
                         // End autosplit: Checks for the credits screen
                         let credits_cutscene_ptr: UnrealPointer<4> = UnrealPointer::new(
@@ -215,11 +183,6 @@ async fn main() {
                         } else {
                             credits_running = false;
                         }
-                        #[cfg(debug_assertions)]
-                        set_variable(
-                            "credits",
-                            &format!("{:?}", credits_cutscene_ptr.deref::<u8>(&process, &module)),
-                        );
 
                         // These three work the same way.
                         // They are either broken (The pointer to the screen is null) before
@@ -258,6 +221,42 @@ async fn main() {
                             }
                         } else {
                             last_item = 0;
+                        }
+
+                        // Tracking stuf in debug mode
+                        #[cfg(debug_assertions)]
+                        {
+                            set_variable(
+                                "credits",
+                                &format!(
+                                    "{:?}",
+                                    credits_cutscene_ptr.deref::<u8>(&process, &module)
+                                ),
+                            );
+                            set_variable(
+                                "intro",
+                                &format!(
+                                    "{:?}",
+                                    intro_cutscene_active_ptr.deref::<u8>(&process, &module)
+                                ),
+                            );
+                            set_variable(
+                                "load_status",
+                                &format!("{:?}", load_status.deref::<u8>(&process, &module)),
+                            );
+                            let player_stats: UnrealPointer<4> = UnrealPointer::new(
+                                Address::new(player_location),
+                                &["PlayerController", "Pawn", "PlayerStats"],
+                            );
+                            if let Ok(addr) = player_stats.deref_offsets(&process, &module) {
+                                set_variable(
+                                    "sprint_mult",
+                                    &format!(
+                                        "{}",
+                                        &process.read::<f32>(addr + 0x18).unwrap_or(-1.0),
+                                    ),
+                                );
+                            }
                         }
                     } else {
                     }
