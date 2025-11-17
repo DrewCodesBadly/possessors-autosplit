@@ -24,8 +24,8 @@ struct Settings {
     #[default = true]
     start: bool,
 
-    /// Split on ending
-    #[default = true]
+    /// Split on ending credits
+    #[default = false]
     end: bool,
 
     /// Split when collecting an ability
@@ -33,8 +33,12 @@ struct Settings {
     abilities: bool,
 
     /// Split when collecting any item
-    #[default = true]
+    #[default = false]
     items: bool,
+
+    /// Split on killing bosses
+    #[default = true]
+    bosses: bool,
 }
 
 // TODO: Optimize all of this instead of using the unreal functions.
@@ -65,6 +69,7 @@ async fn main() {
                 let mut last_item = 0;
                 let mut in_intro_cutscene = false;
                 let mut credits_running = false;
+                let mut awaiting_boss_split = false;
                 // Used to determine when to start the timer.
                 // The timer will start when
                 // 1. We Have left the title screen (sets this bool to true)
@@ -97,12 +102,6 @@ async fn main() {
                     {
                         // INVALID, DEAD, ALIVE, RESPAWNING. Kinda pointless?
                         // If you want something to happen when you die maybe?
-                        // let player_state: UnrealPointer<3> = UnrealPointer::new(Address::new(player_location), &[
-                        //     "PlayerController",
-                        //     "Pawn",
-                        //     "CoreState",
-                        // ]);
-                        // set_variable("player state", &format!("{:?}", player_state.deref::<[u8; 64]>(&process, &module)));
 
                         // I'm just gonna use the ability unlock screen since I haven't tested
                         // this.
@@ -182,6 +181,86 @@ async fn main() {
                             credits_running = true;
                         } else {
                             credits_running = false;
+                        }
+
+                        // Boss autosplits
+                        if settings.bosses {
+                            let boss_bar: UnrealPointer<6> = UnrealPointer::new(
+                                Address::new(player_location),
+                                &[
+                                    "PlayerController",
+                                    "MyHUD",
+                                    "PlayerHUD",
+                                    "WBP_BossHealthBar",
+                                    "BOSS",
+                                    "Fatal Damage",
+                                ],
+                            );
+                            let player_state: UnrealPointer<3> = UnrealPointer::new(
+                                Address::new(player_location),
+                                &["PlayerController", "Pawn", "CoreState"],
+                            );
+
+                            let player_is_alive = player_state
+                                .deref::<u8>(&process, &module)
+                                .ok()
+                                .filter(|v| *v == 1)
+                                .is_some();
+                            let boss_exists = boss_bar.deref::<u8>(&process, &module).is_ok();
+                            if !awaiting_boss_split && boss_exists && player_is_alive {
+                                awaiting_boss_split = true;
+                            }
+
+                            if awaiting_boss_split {
+                                if !player_is_alive {
+                                    // Player died, discount the next wait
+                                    awaiting_boss_split = false;
+                                } else if !boss_exists {
+                                    // Then we have to check the other two boss bars....
+                                    let boss_bar_2: UnrealPointer<6> = UnrealPointer::new(
+                                        Address::new(player_location),
+                                        &[
+                                            "PlayerController",
+                                            "MyHUD",
+                                            "PlayerHUD",
+                                            "WBP_BossHealthBar2",
+                                            "BOSS",
+                                            "Fatal Damage",
+                                        ],
+                                    );
+                                    let boss_2_exists =
+                                        boss_bar_2.deref::<u8>(&process, &module).is_ok();
+                                    let boss_bar_3: UnrealPointer<6> = UnrealPointer::new(
+                                        Address::new(player_location),
+                                        &[
+                                            "PlayerController",
+                                            "MyHUD",
+                                            "PlayerHUD",
+                                            "WBP_BossHealthBar3",
+                                            "BOSS",
+                                            "Fatal Damage",
+                                        ],
+                                    );
+                                    let boss_3_exists =
+                                        boss_bar_3.deref::<u8>(&process, &module).is_ok();
+                                    if !boss_2_exists && !boss_3_exists {
+                                        awaiting_boss_split = false;
+                                        split();
+                                    }
+                                }
+                            }
+
+                            #[cfg(debug_assertions)]
+                            {
+                                set_variable(
+                                    "boss_bar",
+                                    &format!("{:?}", boss_bar.deref::<i32>(&process, &module)),
+                                );
+                                set_variable(
+                                    "player state",
+                                    &format!("{:?}", player_state.deref::<u8>(&process, &module)),
+                                );
+                            }
                         }
 
                         // These three work the same way.
